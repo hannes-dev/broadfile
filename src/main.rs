@@ -1,60 +1,84 @@
-use std::{net::{UdpSocket,TcpStream, TcpListener, SocketAddr}, time::Duration, fs::File, path::{Path, PathBuf}, io::{Write, self, Seek}, str::from_utf8, ffi::OsStr};
+use std::env;
 use std::error::Error;
 use std::thread;
-use std::env;
+use std::{
+    ffi::OsStr,
+    fs::File,
+    io::{self, Seek},
+    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
+    path::PathBuf,
+    str::from_utf8,
+    time::Duration,
+};
 
-struct Server {
+struct ServerInfo {
     address: SocketAddr,
-    file_name: String,
+    file_path: PathBuf,
 }
 
-const ADDRESS: &str = "0.0.0.0:12345";
+const PORT: u16 = 55674;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let broadcast_s = UdpSocket::bind(ADDRESS)?;
+    let address = SocketAddr::from(([0, 0, 0, 0], PORT));
+    let broadcast_s = UdpSocket::bind(address)?;
     broadcast_s.set_broadcast(true)?;
-
 
     let args: Vec<String> = env::args().collect();
     if args.len() == 2 {
         // server
-        let mut path = PathBuf::new();
-        path.push(args[1].clone());
-        let more_path = path.clone();
-        thread::spawn(move || {
-            announce(broadcast_s, more_path.file_name().unwrap())
-        });
-        let socket = TcpListener::bind(ADDRESS)?;
-        
-        let mut file = File::open(path)?;
-        for client in socket.incoming() {
-            file.seek(io::SeekFrom::Start(0))?;
-            io::copy(&mut file, &mut client?)?;
-        }
+        let mut file_path = PathBuf::new();
+        file_path.push(args[1].clone());
+        let more_path = file_path.clone();
+
+        thread::spawn(move || announce(broadcast_s, more_path.file_name().unwrap()));
+
+        serve_file(ServerInfo { address, file_path });
     } else {
         // client
         let server = discover(broadcast_s);
-
-        let mut socket = TcpStream::connect(server.address)?;
-        let mut file = File::create(server.file_name)?;
-        io::copy(&mut socket, &mut file)?;
+        receive_file(server);
     }
 
     Ok(())
 }
 
 fn announce(s: UdpSocket, file_name: &OsStr) {
+    let addr = SocketAddr::from(([255, 255, 255, 255], PORT));
     loop {
-        s.send_to(file_name.as_encoded_bytes(), "255.255.255.255:55674").unwrap();
+        s.send_to(file_name.as_encoded_bytes(), addr).unwrap();
         thread::sleep(Duration::from_secs(5));
     }
-
 }
 
-fn discover(s: UdpSocket) -> Server {
+fn discover(s: UdpSocket) -> ServerInfo {
     let mut buf = [0; 512];
     let (data_len, address) = s.recv_from(&mut buf).unwrap();
-    let file_name = from_utf8(&buf[..data_len]).unwrap().to_owned();
+    let file_name = PathBuf::from(from_utf8(&buf[..data_len]).unwrap().to_owned());
 
-    Server { address, file_name }
+    ServerInfo {
+        address,
+        file_path: file_name,
+    }
+}
+
+fn serve_file(server: ServerInfo) {
+    let socket = TcpListener::bind(server.address).unwrap();
+
+    let mut file = File::open(server.file_path).unwrap();
+    for client in socket.incoming() {
+        let mut client = client.unwrap();
+        file.seek(io::SeekFrom::Start(0)).unwrap();
+        io::copy(&mut file, &mut client).unwrap();
+    }
+}
+
+fn receive_file(server: ServerInfo) {
+    let mut socket = TcpStream::connect(server.address).unwrap();
+    let mut file = File::options()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(server.file_path)
+        .unwrap();
+    io::copy(&mut socket, &mut file).unwrap();
 }
