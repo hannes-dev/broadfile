@@ -1,5 +1,7 @@
 use std::env;
 use std::error::Error;
+use std::path::Path;
+use std::str::FromStr;
 use std::thread;
 use std::{
     ffi::OsStr,
@@ -23,16 +25,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let broadcast_s = UdpSocket::bind(address)?;
     broadcast_s.set_broadcast(true)?;
 
-    let args: Vec<String> = env::args().collect();
-    if args.len() == 2 {
+    if env::args().len() == 2 {
         // server
-        let mut file_path = PathBuf::new();
-        file_path.push(args[1].clone());
-        let more_path = file_path.clone();
+        let path_str = env::args().nth(1).unwrap();
+        let path_str_move = path_str.clone();
 
-        thread::spawn(move || announce(broadcast_s, more_path.file_name().unwrap()));
+        thread::spawn(move || {
+            announce(broadcast_s, Path::new(&path_str_move).file_name().unwrap())
+        });
 
-        serve_file(ServerInfo { address, file_path });
+        let path = PathBuf::from_str(&path_str).unwrap();
+        serve_file(ServerInfo { address, file_path: path });
     } else {
         // client
         let server = discover(broadcast_s);
