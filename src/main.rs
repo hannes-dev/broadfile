@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         
         let mut file = File::open(path)?;
         for client in socket.incoming() {
-            // file.seek(0);
+            file.seek(io::SeekFrom::Start(0))?;
             io::copy(&mut file, &mut client?)?;
         }
     } else {
