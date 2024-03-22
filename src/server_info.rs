@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::thread;
 use std::{
     fs::File,
@@ -41,24 +42,24 @@ impl ServerInfo {
         Ok(())
     }
 
-    pub fn reveive_file(&self) -> Result<(), io::Error> {
+    pub fn reveive_file(&self, file_name: String) -> Result<(), io::Error> {
         let mut socket = TcpStream::connect(self.address)?;
         let mut file = File::options()
             .read(true)
             .write(true)
             .create_new(true)
-            .open(self.file_path.file_name().unwrap())?;
+            .open(file_name)?;
         io::copy(&mut socket, &mut file)?;
 
         Ok(())
     }
 
-    pub fn start_announce(&self) -> Result<(), io::Error> {
+    pub fn start_announce(&self, target_port: u16) -> Result<(), io::Error> {
         let broadcast_s = UdpSocket::bind(self.address)?;
         broadcast_s.set_broadcast(true)?;
 
         let file_name = self.file_path.file_name().unwrap().to_owned();
-        let addr = SocketAddr::from(([255, 255, 255, 255], self.address.port()));
+        let addr = SocketAddr::from(([255, 255, 255, 255], target_port));
 
         thread::spawn(move || loop {
             broadcast_s
@@ -68,5 +69,16 @@ impl ServerInfo {
         });
 
         Ok(())
+    }
+}
+
+impl Display for ServerInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} - {}",
+            self.address.ip(),
+            self.file_path.file_name().unwrap().to_str().unwrap()
+        )
     }
 }
