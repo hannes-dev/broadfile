@@ -34,8 +34,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             announce(broadcast_s, Path::new(&path_str_move).file_name().unwrap())
         });
 
-        let path = PathBuf::from_str(&path_str).unwrap();
-        serve_file(ServerInfo { address, file_path: path });
+        let file_path = PathBuf::from_str(&path_str).unwrap();
+        serve_file(ServerInfo { address, file_path });
     } else {
         // client
         let server = discover(broadcast_s);
@@ -68,8 +68,7 @@ fn serve_file(server: ServerInfo) {
     let socket = TcpListener::bind(server.address).unwrap();
 
     let mut file = File::open(server.file_path).unwrap();
-    for client in socket.incoming() {
-        let mut client = client.unwrap();
+    for mut client in socket.incoming().filter_map(|x| x.ok()) {
         file.seek(io::SeekFrom::Start(0)).unwrap();
         io::copy(&mut file, &mut client).unwrap();
     }
